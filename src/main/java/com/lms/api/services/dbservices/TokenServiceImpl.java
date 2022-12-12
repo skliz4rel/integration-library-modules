@@ -7,8 +7,10 @@ import com.lms.api.utils.EncodeDecoder;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import reactor.core.publisher.Mono;
 
+import java.util.Random;
 import java.util.UUID;
 
 @Service
@@ -19,33 +21,37 @@ public class TokenServiceImpl {
     private final TokenRepository tokenRepository;
 
 
+    @Transactional
     public Mono<Boolean> storeCredentials(String transactionId, String username,String rawpassword, String hashPassword, String tokenkey){
 
         String basicAuthstr  = EncodeDecoder.encodeBase64(username+":"+rawpassword);
 
         try {
 
-            Token tokenEntity = new Token();
-         // This would prevent having multiple tokens
-            tokenEntity.setUsername(username);
-            tokenEntity.setHashPassword(hashPassword);
-            tokenEntity.setScoringEngineToken(tokenkey);
-            tokenEntity.setBasicAuthstr(basicAuthstr);
+            //tokenRepository.deleteAll().block();
 
-            tokenRepository.deleteAll().block();
+           return tokenRepository.findById("1").flatMap(item->{
 
-            return  tokenRepository.save(tokenEntity).map(it->{
+               log.info("{}:::transactionId updating the token in db", transactionId);
 
-                        if(it !=null) return true;
-                        else
-                        return false;
-                    })
-                    .onErrorResume((ex) -> {
+                item.setUsername(username);
+                item.setHashPassword(hashPassword);
+                item.setScoringEngineToken(tokenkey);
+                item.setBasicAuthstr(basicAuthstr);
 
-
-                        log.error("{} :::transactionId error saving credentials in the register operations error:: {}", transactionId, ex);
+                return tokenRepository.save(item).flatMap(it->{
+                    if(it != null){
+                        return Mono.just(true);
+                    }
+                    else
                         return Mono.just(false);
-                    });
+                });
+
+            }).switchIfEmpty(
+                    Mono.defer(() -> {
+                       return saveToken(transactionId, username, rawpassword, hashPassword, tokenkey, basicAuthstr);
+                    }
+            ));
         }
         catch (Exception e){
             log.error("{}:::transactionId error was thrown saving the registered url and token to the database {}", transactionId, e);
@@ -54,5 +60,30 @@ public class TokenServiceImpl {
         }
     }
 
+   Mono<Boolean> saveToken(String transactionId, String username,String rawpassword, String hashPassword, String tokenkey, String basicAuthstr){
+        log.info("{} transactionId, saving the token in the database ", transactionId);
+
+        Token tokenEntity = new Token();
+        // This would prevent having multiple tokens
+       tokenEntity.setId(randomId());
+        tokenEntity.setUsername(username);
+        tokenEntity.setHashPassword(hashPassword);
+        tokenEntity.setScoringEngineToken(tokenkey);
+        tokenEntity.setBasicAuthstr(basicAuthstr);
+
+
+        return tokenRepository.save(tokenEntity).map((it)->{
+
+            if(it != null) return true;
+            else return false;
+        });
+
+    }
+
+
+    private String randomId(){
+        Random random = new Random();
+       return  String.valueOf(random.nextInt(1000));
+    }
 
 }

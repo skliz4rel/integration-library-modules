@@ -14,7 +14,6 @@ import org.springframework.stereotype.Indexed;
 public class Token {
 
     @Id
-    @Generated
     @Column("id")
     protected String id;
 
